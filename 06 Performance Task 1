@@ -1,4 +1,4 @@
-# Token Types
+# Token types
 INTEGER, PLUS, MINUS, MUL, DIV, LPAREN, RPAREN, ID, ASSIGN, BEGIN, END, SEMI, DOT, EOF = (
     'INTEGER', 'PLUS', 'MINUS', 'MUL', 'DIV', '(', ')', 'ID', 'ASSIGN', 'BEGIN', 'END', 'SEMI', 'DOT', 'EOF'
 )
@@ -7,25 +7,21 @@ class Token:
     def __init__(self, type_, value):
         self.type = type_
         self.value = value
-
     def __str__(self):
-        return f"Token({self.type}, {repr(self.value)})"
+        return f'Token({self.type}, {repr(self.value)})'
 
 class Lexer:
     def __init__(self, text):
         self.text = text
         self.pos = 0
-        self.current_char = self.text[self.pos]
+        self.current_char = self.text[self.pos] if self.text else None
 
     def error(self):
         raise Exception('Invalid character')
 
     def advance(self):
         self.pos += 1
-        if self.pos > len(self.text) - 1:
-            self.current_char = None
-        else:
-            self.current_char = self.text[self.pos]
+        self.current_char = self.text[self.pos] if self.pos < len(self.text) else None
 
     def skip_whitespace(self):
         while self.current_char is not None and self.current_char.isspace():
@@ -33,9 +29,7 @@ class Lexer:
 
     def peek(self):
         peek_pos = self.pos + 1
-        if peek_pos > len(self.text) - 1:
-            return None
-        return self.text[peek_pos]
+        return self.text[peek_pos] if peek_pos < len(self.text) else None
 
     def _id(self):
         result = ''
@@ -96,6 +90,7 @@ class Lexer:
             self.error()
         return Token(EOF, None)
 
+# AST classes
 class AST: pass
 class BinOp(AST):
     def __init__(self, left, op, right): self.left, self.op, self.right = left, op, right
@@ -118,8 +113,10 @@ class Parser:
 
     def error(self): raise Exception('Invalid syntax')
     def eat(self, token_type):
-        if self.current_token.type == token_type: self.current_token = self.lexer.get_next_token()
-        else: self.error()
+        if self.current_token.type == token_type:
+            self.current_token = self.lexer.get_next_token()
+        else:
+            self.error()
 
     def factor(self):
         token = self.current_token
@@ -203,17 +200,23 @@ class Parser:
     def parse(self):
         return self.program()
 
+# Visitor base
 class NodeVisitor:
     def visit(self, node):
         method_name = f'visit_{type(node).__name__}'
         visitor = getattr(self, method_name, self.generic_visit)
         return visitor(node)
-    def generic_visit(self, node): raise Exception(f'No visit_{type(node).__name__} method')
+    def generic_visit(self, node):
+        raise Exception(f'No visit_{type(node).__name__} method')
 
+# Interpreter
 class Interpreter(NodeVisitor):
-    def __init__(self, parser):
-        self.parser = parser
+    def __init__(self):
         self.GLOBAL_MEMORY = {}
+
+    def interpret(self, parser):
+        tree = parser.parse()
+        self.visit(tree)
 
     def visit_BinOp(self, node):
         if node.op.type == PLUS:
@@ -225,38 +228,27 @@ class Interpreter(NodeVisitor):
         elif node.op.type == DIV:
             return self.visit(node.left) / self.visit(node.right)
 
-    def visit_Num(self, node):
-        return node.value
-
+    def visit_Num(self, node): return node.value
     def visit_UnaryOp(self, node):
-        op = node.op.type
-        if op == PLUS:
+        if node.op.type == PLUS:
             return +self.visit(node.expr)
-        elif op == MINUS:
+        elif node.op.type == MINUS:
             return -self.visit(node.expr)
-
     def visit_Compound(self, node):
         for child in node.children:
             self.visit(child)
-
     def visit_Assign(self, node):
         var_name = node.left.value
         self.GLOBAL_MEMORY[var_name] = self.visit(node.right)
-
     def visit_Var(self, node):
         var_name = node.value
         val = self.GLOBAL_MEMORY.get(var_name)
         if val is None:
             raise NameError(f"Variable '{var_name}' not found")
         return val
-
     def visit_NoOp(self, node): pass
 
-    def interpret(self):
-        tree = self.parser.parse()
-        self.visit(tree)
-        return self.GLOBAL_MEMORY
-
+# --- Main logic to process multiple blocks ---
 code = """
 BEGIN
     BEGIN
@@ -277,8 +269,13 @@ BEGIN
 END.
 """
 
-lexer = Lexer(code)
-parser = Parser(lexer)
-interpreter = Interpreter(parser)
-memory = interpreter.interpret()
-print(memory)
+blocks = [block.strip() + '.' for block in code.strip().split('.') if block.strip()]
+interpreter = Interpreter()
+
+for block in blocks:
+    lexer = Lexer(block)
+    parser = Parser(lexer)
+    interpreter.interpret(parser)
+
+print(interpreter.GLOBAL_MEMORY)
+
